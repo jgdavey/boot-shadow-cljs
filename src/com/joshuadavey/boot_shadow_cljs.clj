@@ -5,7 +5,8 @@
             [clojure.java.shell :refer [sh]]
             [boot.core :as boot :refer [deftask]]
             [boot.pod :as pod]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.edn :as edn])
   (:import [java.util Properties]
            [java.io File]))
 
@@ -13,7 +14,6 @@
   (.getCanonicalFile (File. (str/join File/separator segments))))
 
 (defn ensure-shadow [dir]
-  (println "Directory" (str (path dir)))
   (when-not (.exists (path dir "package.json"))
     (println "Initializing npm project...")
     (sh "npm" "init" "--force"))
@@ -34,34 +34,45 @@
     (defn file-path [& segments]
       (.getCanonicalFile (File. (str/join File/separator segments))))))
 
-(defn- make-pod []
-  (pod/make-pod (-> (boot/get-env)
-                    (assoc :dependencies [['org.clojure/clojure "1.9.0-RC1"]
-                                          ['thheller/shadow-cljs "2.0.90"]]))))
+(defn- read-config []
+  (let [c (path "." "shadow-cljs.edn")]
+    (when (.exists c)
+      (-> (slurp c)
+          (edn/read-string)))))
+
+(defn- make-pod [env]
+  (pod/make-pod (-> env
+                    (update :dependencies into [['org.clojure/clojure "1.9.0-RC1"]
+                                                ['thheller/shadow-cljs "2.0.102"]])
+                    (update :dependencies into (:dependencies (read-config))))))
 
 (deftask release
   "Docs"
   [b build BUILD str "name of build"
    d directory DIRECTORY str "path to shadow-cljs project root (default current dir)"]
-  (let [pod (make-pod)
+  (let [env (boot/get-env)
+        pod (make-pod env)
         target (boot/tmp-dir!)
+        cache (boot/cache-dir! ::cache)
         output (str target)
         build-name (keyword (or build "app"))
         dir (or directory (System/getProperty "user.dir"))]
     (ensure-shadow dir)
     (prepare-runtime pod)
     (boot/with-pre-wrap fileset
-      (println "<< Trying something >>")
+      (println "<< Building for release >>")
       (pod/with-eval-in pod
-        (try
-          (api/with-runtime
-            (let [{:keys [output-dir] :as bc} (config/get-build! ~build-name)
-                  build-config (assoc bc :output-dir
-                                      (file-path ~output output-dir))]
-              (api/release* build-config {})))
-          :done
-          (catch Exception e
-            (e/user-friendly-error e))))
+        (api/with-runtime
+          (try
+            (let [{:keys [output-dir] :as bc} (api/get-build-config ~build-name)
+                  build-config (assoc bc
+                                      :cache-root ~(str cache)
+                                      :output-dir
+                                      (str (file-path ~output output-dir)))]
+              (api/release* build-config {}))
+            :done
+            (catch Exception e
+              (e/user-friendly-error e)))))
       (-> fileset
           (boot/add-resource target)
           boot/commit!))))
