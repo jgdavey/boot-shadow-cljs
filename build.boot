@@ -1,9 +1,10 @@
 (set-env!
   :source-paths   #{"src"}
   :resource-paths #{"resources"}
-  :dependencies '[[org.clojure/clojure  "1.9.0-rc1" :scope "provided"]
+  :dependencies '[[org.clojure/clojure  "1.9.0-RC1" :scope "provided"]
                   [boot/core            "2.7.2"     :scope "provided"]
-                  [adzerk/bootlaces     "0.1.13"    :scope "test"]])
+                  [adzerk/bootlaces     "0.1.13"    :scope "test"]
+                  [cheshire             "5.6.3"]])
 
 (require '[adzerk.bootlaces :refer :all])
 
